@@ -174,6 +174,12 @@
             transform: translateY(0);
         }
 
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .products-section {
             background: white;
             border-radius: 15px;
@@ -378,6 +384,29 @@
             background: linear-gradient(135deg, #f44336, #d32f2f);
         }
 
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -394,31 +423,6 @@
                 padding: 20px;
             }
         }
-
-        /* Loading animation */
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Fade in animation */
-        .fade-in {
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
     </style>
 </head>
 <body>
@@ -434,12 +438,12 @@
                 <form id="productForm">
                     <div class="form-group">
                         <label for="productName">ชื่อสินค้า *</label>
-                        <input type="text" id="productName" name="productName" required>
+                        <input type="text" id="productName" name="name" required>
                     </div>
 
                     <div class="form-group">
                         <label for="productCategory">หมวดหมู่ *</label>
-                        <select id="productCategory" name="productCategory" required>
+                        <select id="productCategory" name="category" required>
                             <option value="">เลือกหมวดหมู่</option>
                             <option value="เสื้อผ้า">เสื้อผ้า</option>
                             <option value="อิเล็กทรอนิกส์">อิเล็กทรอนิกส์</option>
@@ -454,12 +458,12 @@
 
                     <div class="form-group">
                         <label for="productPrice">ราคา (บาท) *</label>
-                        <input type="number" id="productPrice" name="productPrice" min="0" step="0.01" required>
+                        <input type="number" id="productPrice" name="price" min="0" step="0.01" required>
                     </div>
 
                     <div class="form-group">
                         <label for="productDescription">รายละเอียดสินค้า</label>
-                        <textarea id="productDescription" name="productDescription" placeholder="กรอกรายละเอียดสินค้า..."></textarea>
+                        <textarea id="productDescription" name="description" placeholder="กรอกรายละเอียดสินค้า..."></textarea>
                     </div>
 
                     <button type="submit" class="btn" id="submitBtn">
@@ -488,16 +492,20 @@
     <div id="notification" class="notification"></div>
 
     <script>
-        // Product management system
+        // API Configuration
+        const API_BASE_URL = '/api';
+
+        // Product management system with API integration
         class ProductManager {
             constructor() {
-                this.products = this.loadProducts();
+                this.products = [];
                 this.editingId = null;
                 this.init();
             }
 
-            init() {
+            async init() {
                 this.bindEvents();
+                await this.loadProducts();
                 this.renderProducts();
                 this.updateProductCount();
             }
@@ -508,7 +516,6 @@
                     this.handleSubmit();
                 });
 
-                // Reset form when clicking outside edit mode
                 document.addEventListener('click', (e) => {
                     if (this.editingId && !e.target.closest('.form-section') && !e.target.closest('.product-card')) {
                         this.resetForm();
@@ -516,82 +523,138 @@
                 });
             }
 
-            handleSubmit() {
+            async handleSubmit() {
                 const formData = new FormData(document.getElementById('productForm'));
                 const product = {
-                    id: this.editingId || Date.now(),
-                    name: formData.get('productName').trim(),
-                    category: formData.get('productCategory'),
-                    price: parseFloat(formData.get('productPrice')),
-                    description: formData.get('productDescription').trim(),
-                    createdAt: this.editingId ? this.products.find(p => p.id === this.editingId).createdAt : new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
+                    name: formData.get('name').trim(),
+                    category: formData.get('category'),
+                    price: parseFloat(formData.get('price')),
+                    description: formData.get('description').trim()
                 };
 
-                // Validation
                 if (!product.name || !product.category || !product.price) {
                     this.showNotification('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน', 'error');
                     return;
                 }
 
-                // Show loading
                 this.setSubmitLoading(true);
 
-                // Simulate API call
-                setTimeout(() => {
+                try {
+                    let response;
                     if (this.editingId) {
-                        this.updateProduct(product);
+                        response = await this.updateProductAPI(this.editingId, product);
                         this.showNotification('อัพเดทสินค้าเรียบร้อยแล้ว', 'success');
                     } else {
-                        this.addProduct(product);
+                        response = await this.createProductAPI(product);
                         this.showNotification('เพิ่มสินค้าเรียบร้อยแล้ว', 'success');
                     }
 
-                    this.saveProducts();
+                    await this.loadProducts();
                     this.renderProducts();
                     this.updateProductCount();
                     this.resetForm();
+                } catch (error) {
+                    this.showNotification(error.message || 'เกิดข้อผิดพลาด', 'error');
+                } finally {
                     this.setSubmitLoading(false);
-                }, 800);
-            }
-
-            addProduct(product) {
-                this.products.unshift(product);
-            }
-
-            updateProduct(updatedProduct) {
-                const index = this.products.findIndex(p => p.id === updatedProduct.id);
-                if (index !== -1) {
-                    this.products[index] = updatedProduct;
                 }
             }
 
-            deleteProduct(id) {
-                if (confirm('คุณแน่ใจหรือไม่ที่จะลบสินค้านี้?')) {
-                    this.products = this.products.filter(p => p.id !== id);
-                    this.saveProducts();
+            async loadProducts() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/products`);
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        this.products = result.data;
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch (error) {
+                    console.error('Error loading products:', error);
+                    this.showNotification('ไม่สามารถโหลดข้อมูลสินค้าได้', 'error');
+                }
+            }
+
+            async createProductAPI(productData) {
+                const response = await fetch(`${API_BASE_URL}/products`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(productData)
+                });
+
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.message || 'ไม่สามารถเพิ่มสินค้าได้');
+                }
+
+                return result;
+            }
+
+            async updateProductAPI(id, productData) {
+                const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(productData)
+                });
+
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.message || 'ไม่สามารถแก้ไขสินค้าได้');
+                }
+
+                return result;
+            }
+
+            async deleteProductAPI(id) {
+                const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.message || 'ไม่สามารถลบสินค้าได้');
+                }
+
+                return result;
+            }
+
+            async deleteProduct(id) {
+                if (!confirm('คุณแน่ใจหรือไม่ที่จะลบสินค้านี้?')) {
+                    return;
+                }
+
+                try {
+                    await this.deleteProductAPI(id);
+                    await this.loadProducts();
                     this.renderProducts();
                     this.updateProductCount();
                     this.showNotification('ลบสินค้าเรียบร้อยแล้ว', 'success');
+                } catch (error) {
+                    this.showNotification(error.message || 'ไม่สามารถลบสินค้าได้', 'error');
                 }
             }
 
             editProduct(id) {
-                const product = this.products.find(p => p.id === id);
+                const product = this.products.find(p => p.id === id || p.id === parseInt(id));
                 if (!product) return;
 
                 this.editingId = id;
                 
-                // Fill form with product data
                 document.getElementById('productName').value = product.name;
                 document.getElementById('productCategory').value = product.category;
                 document.getElementById('productPrice').value = product.price;
                 document.getElementById('productDescription').value = product.description || '';
 
-                // Update button text
                 document.getElementById('btnText').textContent = 'อัพเดทสินค้า';
                 
-                // Scroll to form
                 document.querySelector('.form-section').scrollIntoView({ behavior: 'smooth' });
                 
                 this.showNotification('กำลังแก้ไขสินค้า: ' + product.name, 'success');
@@ -627,98 +690,9 @@
                             <div class="product-price">${this.formatPrice(product.price)} บาท</div>
                         </div>
                         <div class="product-actions">
-                            <button class="btn-small btn-edit" onclick="productManager.editProduct(${product.id})">
+                            <button class="btn-small btn-edit" onclick="productManager.editProduct('${product.id}')">
                                 แก้ไข
                             </button>
-                            <button class="btn-small btn-delete" onclick="productManager.deleteProduct(${product.id})">
+                            <button class="btn-small btn-delete" onclick="productManager.deleteProduct('${product.id}')">
                                 ลบ
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-            }
-
-            updateProductCount() {
-                document.getElementById('productCount').textContent = `${this.products.length} รายการ`;
-            }
-
-            setSubmitLoading(loading) {
-                const btnText = document.getElementById('btnText');
-                const btnLoading = document.getElementById('btnLoading');
-                const submitBtn = document.getElementById('submitBtn');
-
-                if (loading) {
-                    btnText.style.display = 'none';
-                    btnLoading.style.display = 'inline-block';
-                    submitBtn.disabled = true;
-                } else {
-                    btnText.style.display = 'inline';
-                    btnLoading.style.display = 'none';
-                    submitBtn.disabled = false;
-                }
-            }
-
-            showNotification(message, type = 'success') {
-                const notification = document.getElementById('notification');
-                notification.textContent = message;
-                notification.className = `notification ${type}`;
-                
-                // Show notification
-                setTimeout(() => notification.classList.add('show'), 100);
-                
-                // Hide notification after 3 seconds
-                setTimeout(() => {
-                    notification.classList.remove('show');
-                }, 3000);
-            }
-
-            formatPrice(price) {
-                return new Intl.NumberFormat('th-TH', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                }).format(price);
-            }
-
-            escapeHtml(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            }
-
-            saveProducts() {
-                // In a real application, this would save to a database
-                // For demo purposes, we'll use localStorage simulation
-                console.log('Saving products to backend...', this.products);
-            }
-
-            loadProducts() {
-                // In a real application, this would load from a database
-                // For demo purposes, return sample data
-                return [
-                    {
-                        id: 1,
-                        name: 'iPhone 15 Pro',
-                        category: 'อิเล็กทรอนิกส์',
-                        price: 45900,
-                        description: 'สมาร์ทโฟนรุ่นล่าสุดจาก Apple พร้อมชิป A17 Pro และกล้องที่ปรับปรุงใหม่',
-                        createdAt: '2024-01-15T10:00:00Z',
-                        updatedAt: '2024-01-15T10:00:00Z'
-                    },
-                    {
-                        id: 2,
-                        name: 'Nike Air Max 270',
-                        category: 'กีฬา',
-                        price: 4500,
-                        description: 'รองเท้าวิ่งสไตล์สปอร์ตพร้อมเทคโนโลยี Air Max ให้ความนุ่มสบายเท้า',
-                        createdAt: '2024-01-14T15:30:00Z',
-                        updatedAt: '2024-01-14T15:30:00Z'
-                    }
-                ];
-            }
-        }
-
-        // Initialize the product manager
-        const productManager = new ProductManager();
-    </script>
-</body>
-</html>
+                            
