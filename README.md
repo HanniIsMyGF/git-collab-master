@@ -1,2 +1,2 @@
-# Thitipat
-# Nattawut
+# Thitipat Narongsak
+# Nattawut Sa-ardwong
